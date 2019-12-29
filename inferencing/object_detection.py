@@ -40,8 +40,8 @@ def id_class_name(class_id, classes):
 def processFrameOpenCVSSDMobilenet(frame):
     #https://heartbeat.fritz.ai/real-time-object-detection-on-raspberry-pi-using-opencv-dnn-98827255fa60
     # Loading model
-    model = cv2.dnn.readNetFromTensorflow('models/frozen_inference_graph.pb',
-                                        'models/ssd_mobilenet_v2_coco_2018_03_29.pbtxt')
+    model = cv2.dnn.readNetFromTensorflow('models/ssdmobilenet/frozen_inference_graph.pb',
+                                        'models/ssdmobilenet/ssd_mobilenet_v2_coco_2018_03_29.pbtxt')
 
     image_height, image_width, _ = frame.shape
 
@@ -67,7 +67,7 @@ def processFrameOpenCVSSDMobilenet(frame):
 
 def processFrameOpenCVYoloV3(frame):
     # Load Yolo
-    net = cv2.dnn.readNet("weights/yolov3.weights", "cfg/yolov3.cfg")
+    net = cv2.dnn.readNet("models/yolov3/weights/yolov3.weights", "models/yolov3/cfg/yolov3.cfg")
     classes = []
     with open("coco.names", "r") as f:
         classes = [line.strip() for line in f.readlines()]
