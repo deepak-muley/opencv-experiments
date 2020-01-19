@@ -80,13 +80,17 @@ class MLObjectDetectionModelTF(MLObjectDetectionModel):
             raise Exception("model is not initialized")
         self.net.setInput(blob)
         detections = self.net.forward()
-        return detections   
+        return detection_generator(detections)
+        
+    def detection_generator(self, detections):
+        pass
+
 
 class MLObjectDetectionModelCaffe(MLObjectDetectionModel):
     @classmethod
     def Load(cls):
-        modelWeightsFilePath = "models/ssd_mobilenet/MobileNetSSD_deploy.caffemodel"
-        modelConfigPath = "models/ssd_mobilenet/MobileNetSSD_deploy.prototxt"
+        modelWeightsFilePath = "models/ssd_mobilenet/caffe/MobileNetSSD_deploy.caffemodel"
+        modelConfigPath = "models/ssd_mobilenet/caffe/MobileNetSSD_deploy.prototxt"
         classLabelFilePath = None
         model = MLObjectDetectionModelCaffe(modelWeightsFilePath, modelConfigPath, classLabelFilePath)
         model.load_model()
