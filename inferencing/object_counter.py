@@ -11,36 +11,25 @@
 
 
 # import the necessary packages
+import numpy as np
+import argparse
+import time
+import cv2
+import numpy as np
+from collections import defaultdict
+
+import imutils
 from pyimagesearch.centroidtracker import CentroidTracker
 from pyimagesearch.trackableobject import TrackableObject
 from imutils.video import VideoStream
 from imutils.video import FPS
-import numpy as np
-import argparse
-import imutils
-import time
-import dlib
-import cv2
-from scipy.spatial import distance as dist
-from collections import OrderedDict
-import numpy as np
-from collections import defaultdict
-from models import *
+
+from object_detection_models import *
+from tracker import *
 
 skip_frames = 30
 
-def load_yolov3_model():
-    # Load Yolo
-    return MLObjectDetectionModelYolov3.Load()
-
-def load_ssd_mobilenet_model_caffe():
-    # Load SSD Mobilenet
-    return MLObjectDetectionModelCaffe.Load()
-
-def load_ssd_mobilenet_model_tf():
-    return MLObjectDetectionModelTF.Load()
-
-def detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, countMap):
+def detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes):
 
     detections = model.detect(frame, frameWidth, frameHeight)
 
@@ -57,7 +46,7 @@ def detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, c
             label = model.get_detected_object_class_label(idx)
 
             # if the class label is not a person, ignore it
-            if label not in [ "person", "bicycle", "car" ]:
+            if label not in track_classes:
                 continue
 
             countMap[label] += 1
@@ -67,21 +56,15 @@ def detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, c
             right = int(detection[5] * frameWidth)
             bottom = int(detection[6] * frameHeight)
 
-            (startX, startY, endX, endY) = (left, top, right, bottom)
-
-            # construct a dlib rectangle object from the bounding
-            # box coordinates and then start the dlib correlation
-            # tracker
-            tracker = dlib.correlation_tracker()
-            rect = dlib.rectangle(startX, startY, endX, endY)
-            tracker.start_track(rgb, rect)
+            tracker = ObjectTracker()
+            tracker.track(rgb, left, top, right, bottom)
 
             # add the tracker to our list of trackers so we can
             # utilize it during skip frames
             newTrackers.append(tracker)
     return newTrackers
 
-def detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb, countMap):
+def detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes):
 
     detections = model.detect(frame, frameWidth, frameHeight)
 
@@ -101,7 +84,7 @@ def detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb
             label = model.get_detected_object_class_label(idx)
 
             # if the class label is not a person, ignore it
-            if label not in [ "person", "bicycle", "car" ]:
+            if label not in track_classes:
                 continue
 
             countMap[label] += 1
@@ -111,19 +94,15 @@ def detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb
             box = detections[0, 0, i, 3:7] * np.array([frameWidth, frameHeight, frameWidth, frameHeight])
             (startX, startY, endX, endY) = box.astype("int")
 
-            # construct a dlib rectangle object from the bounding
-            # box coordinates and then start the dlib correlation
-            # tracker
-            tracker = dlib.correlation_tracker()
-            rect = dlib.rectangle(startX, startY, endX, endY)
-            tracker.start_track(rgb, rect)
+            tracker = ObjectTracker()
+            tracker.track(rgb, startX, startY, endX, endY)
 
             # add the tracker to our list of trackers so we can
             # utilize it during skip frames
             newTrackers.append(tracker)
     return newTrackers
 
-def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap):
+def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes):
     font = cv2.FONT_HERSHEY_PLAIN
     height, width, channels = frame.shape
 
@@ -168,7 +147,7 @@ def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap)
             confidence = confidences[i]
 
             # if the class label is not a person, ignore it
-            if label not in [ "person", "bicycle", "car" ]:
+            if label not in track_classes:
                 continue
 
             countMap[label] += 1
@@ -177,12 +156,8 @@ def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap)
             # for the object
             (startX, startY, endX, endY) = (x, y, x + w, y + h)
 
-            # construct a dlib rectangle object from the bounding
-            # box coordinates and then start the dlib correlation
-            # tracker
-            tracker = dlib.correlation_tracker()
-            rect = dlib.rectangle(startX, startY, endX, endY)
-            tracker.start_track(rgb, rect)
+            tracker = ObjectTracker()
+            tracker.track(rgb, startX, startY, endX, endY)
 
             # add the tracker to our list of trackers so we can
             # utilize it during skip frames
@@ -202,11 +177,11 @@ def main():
     args = vars(ap.parse_args())
 
     if args["model"] == "yolov3":
-        model = load_yolov3_model()
+        model = MLObjectDetectionModelYolov3.Load()
     elif args["model"] == "ssd_caffe":
-        model = load_ssd_mobilenet_model_caffe()
+        model = MLObjectDetectionModelCaffe.Load()
     elif args["model"] == "ssd_tf":
-        model = load_ssd_mobilenet_model_tf()
+        model = MLObjectDetectionModelTF.Load()
 
     # if a video path was not supplied, grab a reference to the webcam
     if not args.get("input", False):
@@ -251,10 +226,10 @@ def main():
         if args["input"] is not None and frame is None:
             break
 
-        # resize the frame to have a maximum width of 500 pixels (the
+        # resize the frame to have a maximum width of 1000 pixels (the
         # less data we have, the faster we can process it), then convert
         # the frame from BGR to RGB for dlib
-        frame = imutils.resize(frame, width=500)
+        frame = imutils.resize(frame, width=1000)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # if the frame dimensions are empty, set them
@@ -275,13 +250,14 @@ def main():
 
         # check to see if we should run a more computationally expensive
         # object detection method to aid our tracker
+        track_classes = [ "person", "bicycle", "car" ]
         if totalFrames % skip_frames == 0:
             if args["model"] == "yolov3":
-                trackers = detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap)
+                trackers = detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes)
             elif args["model"] == "ssd_caffe":
-                trackers = detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb, countMap)
+                trackers = detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes)
             elif args["model"] == "ssd_tf":
-                trackers = detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, countMap)
+                trackers = detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes)
 
         # otherwise, we should utilize our object *trackers* rather than
         # object *detectors* to obtain a higher frame processing throughput
@@ -343,11 +319,11 @@ def main():
         	("Total Cars Seen", countMap["car"])
         ]
 
-        # # loop over the info tuples and draw them on our frame
+        # loop over the info tuples and draw them on our frame
         # for (i, (k, v)) in enumerate(info):
         # 	text = "{}: {}".format(k, v)
         # 	cv2.putText(frame, text, (10, frameHeight - ((i * 20) + 20)),
-        # 		cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        # 		cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
         # check to see if we should write the frame to disk
         if writer is not None:
