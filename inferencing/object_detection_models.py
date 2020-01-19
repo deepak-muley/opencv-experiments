@@ -80,10 +80,7 @@ class MLObjectDetectionModelTF(MLObjectDetectionModel):
             raise Exception("model is not initialized")
         self.net.setInput(blob)
         detections = self.net.forward()
-        return detection_generator(detections)
-        
-    def detection_generator(self, detections):
-        pass
+        return detections
 
 
 class MLObjectDetectionModelCaffe(MLObjectDetectionModel):
@@ -148,8 +145,7 @@ class MLObjectDetectionModelYolov3(MLObjectDetectionModel):
         # set the status and initialize our new set of object trackers
         if not self.net:
             raise Exception("model is not initialized")
-        layer_names = self.net.getLayerNames()
-        output_layers = [layer_names[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
+        output_layers = self.get_output_layers()
 
         # Detecting objects
         blob = cv2.dnn.blobFromImage(frame, 0.00392, (frameWidth, frameHeight), (0, 0, 0), True, crop=False)
@@ -157,3 +153,24 @@ class MLObjectDetectionModelYolov3(MLObjectDetectionModel):
         self.net.setInput(blob)
         detections = self.net.forward(output_layers)
         return detections
+
+    # function to get the output layer names 
+    # in the architecture
+    def get_output_layers(self):
+        
+        layer_names = self.net.getLayerNames()
+        
+        output_layers = [layer_names[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
+
+        return output_layers
+
+    # function to draw bounding box on the detected object with class name
+    def draw_bounding_box(self, img, class_id, confidence, x, y, x_plus_w, y_plus_h):
+
+        label = str(classes[class_id])
+
+        color = (255, 0, 0) #COLORS[class_id]
+
+        cv2.rectangle(img, (x,y), (x_plus_w,y_plus_h), color, 2)
+
+        cv2.putText(img, label, (x-10,y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)        

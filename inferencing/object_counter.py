@@ -111,14 +111,18 @@ def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap,
     class_ids = []
     confidences = []
     boxes = []
+    conf_threshold = 0.5
+    nms_threshold = 0.4
 
-    # loop over the detections
+    # for each detetion from each output layer 
+    # get the confidence, class id, bounding box params
+    # and ignore weak detections (confidence < 0.5)
     for out in outs:
         for detection in out:
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.2:
+            if confidence > 0.5:
                 # Object detected
                 center_x = int(detection[0] * width)
                 center_y = int(detection[1] * height)
@@ -133,7 +137,7 @@ def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap,
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
 
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.8, 0.3)
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, nms_threshold)
 
     newTrackers = []
     totalPeopleSeen = 0
