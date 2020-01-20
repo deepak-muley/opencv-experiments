@@ -18,14 +18,13 @@ import cv2
 import numpy as np
 from collections import defaultdict
 
-import imutils
 from pyimagesearch.centroidtracker import CentroidTracker
 from pyimagesearch.trackableobject import TrackableObject
-from imutils.video import VideoStream
-from imutils.video import FPS
+from pyimagesearch.fps import FPS
 
 from object_detection_models import *
 from tracker import *
+from camera import *
 
 skip_frames = 30
 
@@ -190,12 +189,11 @@ def main():
     # if a video path was not supplied, grab a reference to the webcam
     if not args.get("input", False):
         print("[INFO] starting video stream...")
-        vs = VideoStream(src=0).start()
-        time.sleep(2.0)
+        vs = VideoReader(0)
     # otherwise, grab a reference to the video file
     else:
         print("[INFO] opening video file...")
-        vs = cv2.VideoCapture(args["input"])
+        vs = VideoReader(args["input"])
 
     # initialize the video writer (we'll instantiate later if need be)
     writer = None
@@ -220,20 +218,20 @@ def main():
 
     # loop over frames from the video stream
     while True:
-        # grab the next frame and handle if we are reading from either
-        # VideoCapture or VideoStream
-        frame = vs.read()
-        frame = frame[1] if args.get("input", False) else frame
+        # grab the next frame and handle
+        frame = vs.get_frame()
 
-        # if we are viewing a video and we did not grab a frame then we
-        # have reached the end of the video
-        if args["input"] is not None and frame is None:
+        if frame is None:
             break
 
-        # resize the frame to have a maximum width of 1000 pixels (the
-        # less data we have, the faster we can process it), then convert
-        # the frame from BGR to RGB for dlib
-        frame = imutils.resize(frame, width=1000)
+        # resize the frame,
+        # then convert the frame from BGR to RGB for dlib
+        scale_percent = 60 # percent of original size
+        width = int(frame.shape[1] * scale_percent / 100)
+        height = int(frame.shape[0] * scale_percent / 100)
+        dim = (width, height)
+        # resize image        
+        frame = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # if the frame dimensions are empty, set them
@@ -243,9 +241,7 @@ def main():
         # if we are supposed to be writing a video to disk, initialize
         # the writer
         if args["output"] is not None and writer is None:
-            fourcc = cv2.VideoWriter_fourcc(*"MP4V")
-            writer = cv2.VideoWriter(args["output"], fourcc, 30,
-                (frameWidth, frameHeight), True)
+            writer = VideoWriter(args["output"], (frameWidth, frameHeight))
 
         # initialize the list of bounding
         # box rectangles returned by either (1) our object detector or
@@ -355,12 +351,7 @@ def main():
     if writer is not None:
         writer.release()
 
-    # if we are not using a video file, stop the camera video stream
-    if not args.get("input", False):
-        vs.stop()
-    # otherwise, release the video file pointer
-    else:
-        vs.release()
+    vs.release()
 
     # close any open windows
     cv2.destroyAllWindows()
