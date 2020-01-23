@@ -22,150 +22,13 @@ from pyimagesearch.centroidtracker import CentroidTracker
 from pyimagesearch.trackableobject import TrackableObject
 from pyimagesearch.fps import FPS
 
-from object_detection_models import *
-from tracker import *
-from camera import *
+from utils.object_detection_models import *
+from utils.tracker import DLibObjectTracker, CV2MultiObjectTracker
+from utils.camera import VideoReader, VideoWriter
 
 skip_frames = 30
 
-def detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes):
 
-    detections = model.detect(frame, frameWidth, frameHeight)
-
-    # Showing informations on the screen
-    newTrackers = []
-
-    # Loop on the outputs
-    for detection in detections[0,0,:,:]:
-        score = float(detection[2])
-        if score > 0.2:
-            # extract the index of the class label from the
-            # detections list
-            idx = int(detection[1])  # prediction class index.
-            label = model.get_detected_object_class_label(idx)
-
-            # if the class label is not a person, ignore it
-            if label not in track_classes:
-                continue
-
-            countMap[label] += 1
-
-            left = int(detection[3] * frameWidth)
-            top = int(detection[4] * frameHeight)
-            right = int(detection[5] * frameWidth)
-            bottom = int(detection[6] * frameHeight)
-
-            tracker = ObjectTracker()
-            tracker.track(rgb, left, top, right, bottom)
-
-            # add the tracker to our list of trackers so we can
-            # utilize it during skip frames
-            newTrackers.append(tracker)
-    return newTrackers
-
-def detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes):
-
-    detections = model.detect(frame, frameWidth, frameHeight)
-
-    # Showing informations on the screen
-    newTrackers = []
-
-    # loop over the detections
-    for i in np.arange(0, detections.shape[2]):
-        # extract the confidence (i.e., probability) associated
-        # with the prediction
-        confidence = detections[0, 0, i, 2]
-
-        if confidence > 0.1:
-            # extract the index of the class label from the
-            # detections list
-            idx = int(detections[0, 0, i, 1])
-            label = model.get_detected_object_class_label(idx)
-
-            # if the class label is not a person, ignore it
-            if label not in track_classes:
-                continue
-
-            countMap[label] += 1
-
-            # compute the (x, y)-coordinates of the bounding box
-            # for the object
-            box = detections[0, 0, i, 3:7] * np.array([frameWidth, frameHeight, frameWidth, frameHeight])
-            (startX, startY, endX, endY) = box.astype("int")
-
-            tracker = ObjectTracker()
-            tracker.track(rgb, startX, startY, endX, endY)
-
-            # add the tracker to our list of trackers so we can
-            # utilize it during skip frames
-            newTrackers.append(tracker)
-    return newTrackers
-
-def detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes):
-    font = cv2.FONT_HERSHEY_PLAIN
-    height, width, channels = frame.shape
-
-    outs = model.detect(frame, 416, 416)
-
-    class_ids = []
-    confidences = []
-    boxes = []
-    conf_threshold = 0.5
-    nms_threshold = 0.4
-
-    # for each detetion from each output layer 
-    # get the confidence, class id, bounding box params
-    # and ignore weak detections (confidence < 0.5)
-    for out in outs:
-        for detection in out:
-            scores = detection[5:]
-            class_id = np.argmax(scores)
-            confidence = scores[class_id]
-            if confidence > 0.5:
-                # Object detected
-                center_x = int(detection[0] * width)
-                center_y = int(detection[1] * height)
-                w = int(detection[2] * width)
-                h = int(detection[3] * height)
-
-                # Rectangle coordinates
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-
-                boxes.append([x, y, w, h])
-                confidences.append(float(confidence))
-                class_ids.append(class_id)
-
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, nms_threshold)
-
-    newTrackers = []
-    totalPeopleSeen = 0
-    totalBicyclesSeen = 0
-    totalCarsSeen = 0    
-
-    for i in range(len(boxes)):
-        if i in indexes:
-            x, y, w, h = boxes[i]
-            label = model.get_detected_object_class_label(class_ids[i])
-            confidence = confidences[i]
-
-            # if the class label is not a person, ignore it
-            if label not in track_classes:
-                continue
-
-            countMap[label] += 1
-
-            # compute the (x, y)-coordinates of the bounding box
-            # for the object
-            (startX, startY, endX, endY) = (x, y, x + w, y + h)
-
-            tracker = ObjectTracker()
-            tracker.track(rgb, startX, startY, endX, endY)
-
-            # add the tracker to our list of trackers so we can
-            # utilize it during skip frames
-            newTrackers.append(tracker)
-    return newTrackers
 
 def main():
     # construct the argument parse and parse the arguments
@@ -175,7 +38,9 @@ def main():
     ap.add_argument("-o", "--output", type=str,
         help="path to optional output video file")
     ap.add_argument("-m", "--model", type=str, default="yolov3",
-        help="which model to use for detection: ssd_caffe, ssd_tf, yolov3")        
+        help="which model to use for detection: ssd_caffe, ssd_tf, yolov3")
+    ap.add_argument("-t", "--tracker", type=str, default="cv2",
+        help="which tracker to use: cv2 or dlib")               
 
     args = vars(ap.parse_args())
 
@@ -219,24 +84,21 @@ def main():
     # loop over frames from the video stream
     while True:
         # grab the next frame and handle
-        frame = vs.get_frame()
+        frameNDArray = vs.get_frame()
 
-        if frame is None:
+        if frameNDArray is None:
             break
 
         # resize the frame,
         # then convert the frame from BGR to RGB for dlib
         scale_percent = 60 # percent of original size
-        width = int(frame.shape[1] * scale_percent / 100)
-        height = int(frame.shape[0] * scale_percent / 100)
-        dim = (width, height)
         # resize image        
-        frame = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frameNDArray = frameNDArray.resizeToScalePercent(scale_percent)
+        rgbFrame = frameNDArray.rgbFrame
 
         # if the frame dimensions are empty, set them
         if frameWidth is None or frameHeight is None:
-            (frameHeight, frameWidth) = frame.shape[:2]
+            (frameHeight, frameWidth) = frameNDArray.frame_shape[:2]
 
         # if we are supposed to be writing a video to disk, initialize
         # the writer
@@ -247,17 +109,18 @@ def main():
         # box rectangles returned by either (1) our object detector or
         # (2) the correlation trackers
         rects = []
+        tracker_type = args["tracker"]
 
         # check to see if we should run a more computationally expensive
         # object detection method to aid our tracker
-        track_classes = [ "person", "bicycle", "car" ]
+        track_classes = [ "car" ]
         if totalFrames % skip_frames == 0:
             if args["model"] == "yolov3":
-                trackers = detectNewObjectsYolov3(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes)
+                trackers = frameNDArray.detectNewObjectsYolov3(frameWidth, frameHeight, model, countMap, track_classes)
             elif args["model"] == "ssd_caffe":
-                trackers = detectNewObjectsSSDMobileNetCaffe(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes)
+                trackers = frameNDArray.detectNewObjectsSSDMobileNetCaffe(frameWidth, frameHeight, model, countMap, track_classes)
             elif args["model"] == "ssd_tf":
-                trackers = detectNewObjectsSSDMobileNetTF(frame, frameWidth, frameHeight, model, rgb, countMap, track_classes)
+                trackers = frameNDArray.detectNewObjectsSSDMobileNetTF(frameWidth, frameHeight, model, countMap, track_classes)
 
         # otherwise, we should utilize our object *trackers* rather than
         # object *detectors* to obtain a higher frame processing throughput
@@ -265,7 +128,7 @@ def main():
             # loop over the trackers
             for tracker in trackers:
                 # update the tracker and grab the updated position
-                tracker.update(rgb)
+                tracker.update(rgbFrame)
                 pos = tracker.get_position()
 
                 # unpack the position object
@@ -308,9 +171,9 @@ def main():
             # draw both the ID of the object and the centroid of the
             # object on the output frame
             text = "ID {}".format(objectID)
-            cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10),
+            cv2.putText(frameNDArray.frame, text, (centroid[0] - 10, centroid[1] - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
+            cv2.circle(frameNDArray.frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
 
         #construct a tuple of information we will be displaying on the frame
         info = [
@@ -327,10 +190,10 @@ def main():
 
         # check to see if we should write the frame to disk
         if writer is not None:
-            writer.write(frame)
+            writer.write(frameNDArray.frame)
 
         # show the output frame
-        cv2.imshow("Frame", frame)
+        cv2.imshow("Frame", frameNDArray.frame)
         key = cv2.waitKey(1) & 0xFF
 
         # if the `q` key was pressed, break from the loop

@@ -1,4 +1,5 @@
 import cv2
+from utils.frame import FrameNDArray
 
 class VideoReader(object):
     def __init__(self, source):
@@ -10,7 +11,9 @@ class VideoReader(object):
         ret, frame = self.vcap.read()
         if ret == False:
             return None
-        return frame
+        if frame is None:
+            return None
+        return FrameNDArray(frame)
 
     def release(self):
         if self.vcap:
