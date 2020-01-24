@@ -25,13 +25,34 @@ class FrameNDArray(object):
 
     @property
     def frame_shape(self):
-        return self.frame.shape      
+        return self.frame.shape
+
+    @property
+    def frame_shape_height(self):
+        return self.frame.shape[0]
+        
+    @property
+    def frame_shape_width(self):
+        return self.frame.shape[1]
+
+    @property
+    def frame_shape_channel(self):
+        return self.frame.shape[2]
+
+    @property
+    def frame_height_width(self):
+        return self.frame.shape[:2]    
 
     def resizeToScalePercent(self, scale_percent):
         width = int(self.frame_shape[1] * scale_percent / 100)
         height = int(self.frame_shape[0] * scale_percent / 100)
         dim = (width, height)
         return FrameNDArray(cv2.resize(self.frame, dim, interpolation=cv2.INTER_AREA))
+
+    def drawHorizontalLineInCenter(self):
+        (height, width) = self.frame_height_width
+        # draw a horizontal line in the center of the frame 
+        cv2.line(self.frame, (0, height // 2), (width, height // 2), (0, 255, 255), 2)
 
     def detectNewObjectsSSDMobileNetTF(self, frameWidth, frameHeight, model, countMap, track_classes):
         
