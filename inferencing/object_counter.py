@@ -80,6 +80,8 @@ def main():
     fps = FPS().start()
 
     totalFrames = 0
+    totalDown = 0
+    totalUp = 0    
 
     # loop over frames from the video stream
     while True:
@@ -98,7 +100,7 @@ def main():
 
         # if the frame dimensions are empty, set them
         if frameWidth is None or frameHeight is None:
-            (frameHeight, frameWidth) = frameNDArray.frame_shape[:2]
+            (frameHeight, frameWidth) = frameNDArray.frame_height_width
 
         # if we are supposed to be writing a video to disk, initialize
         # the writer
@@ -113,7 +115,7 @@ def main():
 
         # check to see if we should run a more computationally expensive
         # object detection method to aid our tracker
-        track_classes = [ "car" ]
+        track_classes = [ "person" ]
         if totalFrames % skip_frames == 0:
             if args["model"] == "yolov3":
                 trackers = frameNDArray.detectNewObjectsYolov3(frameWidth, frameHeight, model, countMap, track_classes)
@@ -140,6 +142,11 @@ def main():
                 # add the bounding box coordinates to the rectangles list
                 rects.append((startX, startY, endX, endY))
 
+        # draw a horizontal line in the center of the frame -- once an
+        # object crosses this line we will determine whether they were
+        # moving 'up' or 'down'
+        frameNDArray.drawHorizontalLineInCenter()
+        
         # use the centroid tracker to associate the (1) old object
         # centroids with (2) the newly computed object centroids
         objects = ct.update(rects)
@@ -165,6 +172,22 @@ def main():
                 direction = centroid[1] - np.mean(y)
                 to.centroids.append(centroid)
 
+                # check to see if the object has been counted or not
+                if not to.counted:
+                    # if the direction is negative (indicating the object
+                    # is moving up) AND the centroid is above the center
+                    # line, count the object
+                    if direction < 0 and centroid[1] < frameHeight // 2:
+                        totalUp += 1
+                        to.counted = True
+
+                    # if the direction is positive (indicating the object
+                    # is moving down) AND the centroid is below the
+                    # center line, count the object
+                    elif direction > 0 and centroid[1] > frameWidth // 2:
+                        totalDown += 1
+                        to.counted = True                
+
             # store the trackable object in our dictionary
             trackableObjects[objectID] = to
 
@@ -177,16 +200,15 @@ def main():
 
         #construct a tuple of information we will be displaying on the frame
         info = [
-        	("Total People Seen", countMap["person"]),
-        	("Total Bycycles Seen", countMap["bicycle"]),		
-        	("Total Cars Seen", countMap["car"])
+            ("Up", totalUp),
+            ("Down", totalDown)           
         ]
 
-        # loop over the info tuples and draw them on our frame
-        # for (i, (k, v)) in enumerate(info):
-        # 	text = "{}: {}".format(k, v)
-        # 	cv2.putText(frame, text, (10, frameHeight - ((i * 20) + 20)),
-        # 		cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+        #loop over the info tuples and draw them on our frame
+        for (i, (k, v)) in enumerate(info):
+        	text = "{}: {}".format(k, v)
+        	cv2.putText(frameNDArray.frame, text, (10, frameHeight - ((i * 20) + 20)),
+        		cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
         # check to see if we should write the frame to disk
         if writer is not None:
